@@ -1,0 +1,85 @@
+Received: from localhost.localdomain ([111.18.93.6])
+	by newxmesmtplogicsvrsza5.qq.com (NewEsmtp) with SMTP
+	id E961D66C; Sun, 10 May 2020 18:58:22 +0800
+X-QQ-mid: xmsmtpt1589108302tmdvgfrna
+X-QQ-XMAILINFO: MHMWHkHpkjqPzxBg04YEggdn4bFA1vo0VbFn2CUG/GSl6umt4r8lf1qfgP9AYq
+	 7/MOxWpGMh8eWAqwm/g2VFhN/67xT9k050sTJfhBigYDyv3H7gYXoVZeQUhNQAEmOgOVeodtUw6s
+	 MOy/otfJNJ3rEHp0vK7XnSqOsrdhFoHRRbFJ0pvw02X2zd4sQRvXlivAGrM7jeo26WiLzQ3TBI+1
+	 LNZnkpxWDJSj+QwcdA7ouCbj1W73PMIzZtidAMoPmdpfHympwokSgAbAUv4F1HjKT+gaeE2AUGGh
+	 VNaWNwop9bO/M5xjOc7ye6Um/CvOX5COsSUrdeiMyr1PhlKN8Rihsd3kw6FM02GE79gRolwWCvuB
+	 5n6p2A+Okh43TaWnY6nr+ernUP3lVXCxLj7Vmq2LmA/+cXPJnQvxodHZQmyANVA5NB6Ph5RiJY62
+	 2iqoFS3K93II37mwuDCo9ePMNy5IbZ3bqZ2ONNI+umIho+XjBmwAgYLvfQgxlZD2UAvb+Y9tWKZQ
+	 IqUXY0svkWLZj7H65EG3omTVtup94nQJHe0MOTwcgll8bvLgIB3BMcmYwnP96M3stIZdMBIBBwbt
+	 yjIvilQmJ1IzT+m4jyP2gle6+7QMccKpLgBPh4xJrERONab/bsuQ/F9oJV2WlQA7ce636/I/9e0a
+	 yRxPrnbXjyLbSHXPsN/e+DPJs0x21oldx7WNdCCrxR2MFLGb5MlPZ8pPdaTS2O8jEkIdr+imb0tM
+	 hD
+From: zhoubo.mr@foxmail.com
+To: davem@davemloft.net,
+	s.hauer@pengutronix.de,
+	netdev@vger.kernel.org,
+	linux-kernel@vger.kernel.org
+Cc: To-run-away <zhoubo.mr@foxmail.com>
+Subject: [PATCH] net/davicom: Add SOC to dm9000 to initialize SROM_BANK clock.
+Date: Sun, 10 May 2020 18:57:58 +0800
+Message-Id: <20200510105758.2336-1-zhoubo.mr@foxmail.com>
+X-Mailer: git-send-email 2.17.1
+
+From: To-run-away <zhoubo.mr@foxmail.com>
+
+Increase the use of dm9000 to initialize the SROM_BANK clock in the SOC,
+otherwise the chip will not work.
+The device tree file can be increased like this:
+ethernet@88000000 {
+    compatible = "davicom,dm9000";
+    ....
+    clocks = <&clocks CLK_SROMC>;
+    clock-names = "sromc";
+};
+
+Signed-off-by: To-run-away <zhoubo.mr@foxmail.com>
+---
+ drivers/net/ethernet/davicom/dm9000.c | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/drivers/net/ethernet/davicom/dm9000.c b/drivers/net/ethernet/davicom/dm9000.c
+index e94ae9b94..68aa32e21 100644
+--- a/drivers/net/ethernet/davicom/dm9000.c
++++ b/drivers/net/ethernet/davicom/dm9000.c
+@@ -30,6 +30,7 @@
+ #include <linux/regulator/consumer.h>
+ #include <linux/gpio.h>
+ #include <linux/of_gpio.h>
++#include <linux/clk.h>
+ 
+ #include <asm/delay.h>
+ #include <asm/irq.h>
+@@ -1430,6 +1431,7 @@ dm9000_probe(struct platform_device *pdev)
+ 	enum of_gpio_flags flags;
+ 	struct regulator *power;
+ 	bool inv_mac_addr = false;
++	const char *clk_name;
+ 
+ 	power = devm_regulator_get(dev, "vcc");
+ 	if (IS_ERR(power)) {
+@@ -1565,6 +1567,18 @@ dm9000_probe(struct platform_device *pdev)
+ 		goto out;
+ 	}
+ 
++	/* Enable clock if specified */
++	if (!of_property_read_string(dev->of_node, "clock-names", &clk_name)) {
++		struct clk *clk = devm_clk_get(dev, clk_name);
++		if (IS_ERR(clk)) {
++			dev_err(dev, "cannot get clock of %s\n", clk_name);
++			ret = PTR_ERR(clk);
++			goto out;
++		}
++		clk_prepare_enable(clk);
++		dev_info(dev, "enable clock '%s'\n", clk_name);
++	}
++
+ 	/* fill in parameters for net-dev structure */
+ 	ndev->base_addr = (unsigned long)db->io_addr;
+ 
+-- 
+2.17.1
+
